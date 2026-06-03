@@ -58,10 +58,17 @@ public class App extends Application {
 
     private Long runningEntryId;
     private LocalDateTime runningSince;
+    // Wall-clock time of the previous tick. The gap between ticks is normally
+    // ~1s; a much larger gap means the JVM was frozen by a system suspend, so we
+    // stop tracking as of this instant (the last moment we know we were awake).
+    private LocalDateTime lastTick;
     // Completed totals for the selected project, captured so the live session
     // can be added on top each tick without re-querying every second.
     private long baseTodaySeconds;
     private long baseTotalSeconds;
+
+    // A tick gap beyond this is treated as a system sleep rather than a hiccup.
+    private static final long SLEEP_GAP_SECONDS = 30;
 
     @Override
     public void start(Stage stage) {
@@ -76,7 +83,7 @@ public class App extends Application {
         stage.setResizable(false);
         stage.show();
 
-        ticker = new Timeline(new KeyFrame(Duration.seconds(1), e -> updateTimerLabel()));
+        ticker = new Timeline(new KeyFrame(Duration.seconds(1), e -> onTick()));
         ticker.setCycleCount(Animation.INDEFINITE);
 
         refreshProjects();
@@ -180,6 +187,7 @@ public class App extends Application {
                 return;
             }
             runningSince = LocalDateTime.now();
+            lastTick = runningSince;
             runningEntryId = timeEntryDao.start(project.id(), runningSince);
             refreshTotals(project); // capture the committed base before this session
             projectCombo.setDisable(true);
@@ -188,17 +196,45 @@ public class App extends Application {
             ticker.play();
             updateTimerLabel();
         } else {
-            Project project = projectCombo.getValue();
-            timeEntryDao.stop(runningEntryId, LocalDateTime.now());
-            ticker.stop();
-            runningEntryId = null;
-            runningSince = null;
-            projectCombo.setDisable(false);
-            toggleButton.setText("Start");
-            timerLabel.setText(formatHms(0));
-            statusLabel.setText("Saved");
-            refreshTotals(project); // now includes the session just saved
+            stopTracking(LocalDateTime.now(), "Saved");
         }
+    }
+
+    /** Stops the running session, stamping the given end time, and refreshes totals. */
+    private void stopTracking(LocalDateTime endTime, String status) {
+        if (runningEntryId == null) {
+            return;
+        }
+        Project project = projectCombo.getValue();
+        timeEntryDao.stop(runningEntryId, endTime);
+        ticker.stop();
+        runningEntryId = null;
+        runningSince = null;
+        lastTick = null;
+        projectCombo.setDisable(false);
+        toggleButton.setText("Start");
+        timerLabel.setText(formatHms(0));
+        statusLabel.setText(status);
+        refreshTotals(project);
+    }
+
+    /**
+     * Per-second tick. Detects a system sleep (a tick gap far larger than the
+     * expected ~1s, because the JVM was frozen while suspended) and, if found,
+     * stops tracking as of the last awake instant so the slept time isn't billed.
+     */
+    private void onTick() {
+        if (runningSince == null) {
+            return;
+        }
+        LocalDateTime now = LocalDateTime.now();
+        if (lastTick != null
+                && java.time.Duration.between(lastTick, now).getSeconds() > SLEEP_GAP_SECONDS) {
+            stopTracking(lastTick, "Stopped — system was asleep");
+            return;
+        }
+        lastTick = now;
+        updateTimerLabel();
     }
 
     /** Loads committed today/all-time totals for a project into the labels and the live base. */

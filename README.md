@@ -13,6 +13,8 @@ GraalVM / GluonFX.
 - Quick project dropdown + one-click Start/Stop timer.
 - Lightweight single-file H2 database, administrable from DBeaver.
 - The database engine starts and stops with the app.
+- Auto-stops the running timer when the machine sleeps, trimming the slept time
+  out (the entry ends at the last moment the machine was awake).
 
 ## Requirements
 
