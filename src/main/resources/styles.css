@@ -29,3 +29,26 @@
     -fx-font-size: 11px;
     -fx-text-fill: #9399b2;
 }
+
+/* Always-on-top toggle: the default check box is invisible on a dark background. */
+.pin-label {
+    -fx-font-size: 11px;
+    -fx-text-fill: #9399b2;
+    -fx-cursor: hand;
+}
+
+.check-box .box {
+    -fx-background-color: #313244;
+    -fx-background-radius: 4;
+    -fx-border-color: #585b70;
+    -fx-border-radius: 4;
+}
+
+.check-box:selected .box {
+    -fx-background-color: #89b4fa;
+    -fx-border-color: #89b4fa;
+}
+
+.check-box:selected .mark {
+    -fx-background-color: #1e1e2e;
+}

@@ -1,9 +1,12 @@
 package com.xpquest.timetracker.db;
 
+import org.h2.tools.RunScript;
 import org.h2.tools.Server;
 
 import java.io.IOException;
 import java.io.InputStream;
+import java.io.InputStreamReader;
+import java.io.Reader;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -11,7 +14,6 @@ import java.nio.file.Paths;
 import java.sql.Connection;
 import java.sql.DriverManager;
 import java.sql.SQLException;
-import java.sql.Statement;
 
 /**
  * Owns the embedded H2 database lifecycle.
@@ -72,27 +74,18 @@ public final class Database {
     }
 
     private void applySchema() {
-        String script = readResource("/schema.sql");
-        try (Connection c = connection(); Statement st = c.createStatement()) {
-            for (String statement : script.split(";")) {
-                String trimmed = statement.trim();
-                if (!trimmed.isEmpty()) {
-                    st.execute(trimmed);
-                }
-            }
-        } catch (SQLException e) {
-            throw new IllegalStateException("Failed to initialise schema", e);
-        }
-    }
-
-    private static String readResource(String path) {
-        try (InputStream in = Database.class.getResourceAsStream(path)) {
+        // RunScript tokenises the script properly (comments, quoted strings,
+        // multi-statement), so we never have to hand-split on ';'.
+        try (InputStream in = Database.class.getResourceAsStream("/schema.sql")) {
             if (in == null) {
-                throw new IllegalStateException("Resource not found on classpath: " + path);
+                throw new IllegalStateException("schema.sql not found on classpath");
             }
-            return new String(in.readAllBytes(), StandardCharsets.UTF_8);
-        } catch (IOException e) {
-            throw new IllegalStateException("Failed to read resource " + path, e);
+            try (Connection c = connection();
+                 Reader reader = new InputStreamReader(in, StandardCharsets.UTF_8)) {
+                RunScript.execute(c, reader);
+            }
+        } catch (IOException | SQLException e) {
+            throw new IllegalStateException("Failed to initialise schema", e);
         }
     }
 }

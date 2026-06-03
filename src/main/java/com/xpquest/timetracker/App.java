@@ -25,6 +25,7 @@ import javafx.scene.control.Tooltip;
 import javafx.scene.layout.GridPane;
 import javafx.scene.layout.HBox;
 import javafx.scene.layout.Priority;
+import javafx.scene.layout.Region;
 import javafx.scene.layout.VBox;
 import javafx.stage.Stage;
 import javafx.util.Duration;
@@ -106,16 +107,33 @@ public class App extends Application {
         toggleButton.getStyleClass().add("toggle");
         toggleButton.setOnAction(e -> toggleTimer());
 
-        CheckBox pin = new CheckBox("Always on top");
-        pin.setSelected(true);
-        pin.selectedProperty().addListener((o, was, now) -> stage.setAlwaysOnTop(now));
-
         statusLabel = new Label("Ready");
         statusLabel.getStyleClass().add("status");
 
-        VBox root = new VBox(10, projectRow, timerLabel, toggleButton, pin, statusLabel);
+        // Bottom bar: status on the left, the always-on-top toggle in the lower-right
+        // corner with its own adjacent label (clicking the label toggles it too).
+        Label pinLabel = new Label("Always on top");
+        pinLabel.getStyleClass().add("pin-label");
+        CheckBox pin = new CheckBox();
+        pin.setSelected(true);
+        pin.selectedProperty().addListener((o, was, now) -> stage.setAlwaysOnTop(now));
+        pinLabel.setOnMouseClicked(e -> pin.setSelected(!pin.isSelected()));
+
+        HBox pinBox = new HBox(6, pinLabel, pin);
+        pinBox.setAlignment(Pos.CENTER_RIGHT);
+
+        Region spacer = new Region();
+        HBox.setHgrow(spacer, Priority.ALWAYS);
+        HBox bottomBar = new HBox(8, statusLabel, spacer, pinBox);
+        bottomBar.setAlignment(Pos.CENTER_LEFT);
+        bottomBar.setMaxWidth(Double.MAX_VALUE);
+
+        Region vSpacer = new Region();
+        VBox.setVgrow(vSpacer, Priority.ALWAYS);
+
+        VBox root = new VBox(10, projectRow, timerLabel, toggleButton, vSpacer, bottomBar);
         root.setPadding(new Insets(12));
-        root.setAlignment(Pos.CENTER);
+        root.setAlignment(Pos.TOP_CENTER);
         root.getStyleClass().add("root");
 
         Scene scene = new Scene(root, 320, 220);
