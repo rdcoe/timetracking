@@ -30,6 +30,17 @@
     -fx-text-fill: #9399b2;
 }
 
+.stat-caption {
+    -fx-font-size: 10px;
+    -fx-text-fill: #9399b2;
+}
+
+.stat-value {
+    -fx-font-family: "monospace";
+    -fx-font-size: 15px;
+    -fx-text-fill: #cdd6f4;
+}
+
 /* Always-on-top toggle: the default check box is invisible on a dark background. */
 .pin-label {
     -fx-font-size: 11px;

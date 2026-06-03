@@ -50,12 +50,18 @@ public class App extends Application {
 
     private ComboBox<Project> projectCombo;
     private Label timerLabel;
+    private Label todayLabel;
+    private Label totalLabel;
     private Button toggleButton;
     private Label statusLabel;
     private Timeline ticker;
 
     private Long runningEntryId;
     private LocalDateTime runningSince;
+    // Completed totals for the selected project, captured so the live session
+    // can be added on top each tick without re-querying every second.
+    private long baseTodaySeconds;
+    private long baseTotalSeconds;
 
     @Override
     public void start(Stage stage) {
@@ -102,6 +108,19 @@ public class App extends Application {
         timerLabel = new Label("00:00:00");
         timerLabel.getStyleClass().add("timer");
 
+        // Cumulative totals for the selected project: today and all-time.
+        todayLabel = new Label("00:00:00");
+        totalLabel = new Label("00:00:00");
+        HBox stats = new HBox(28, statBox("Today", todayLabel), statBox("Total to date", totalLabel));
+        stats.setAlignment(Pos.CENTER);
+
+        // React to a different project being picked (combo is disabled while tracking).
+        projectCombo.valueProperty().addListener((o, was, now) -> {
+            if (runningEntryId == null) {
+                refreshTotals(now);
+            }
+        });
+
         toggleButton = new Button("Start");
         toggleButton.setMaxWidth(Double.MAX_VALUE);
         toggleButton.getStyleClass().add("toggle");
@@ -131,12 +150,12 @@ public class App extends Application {
         Region vSpacer = new Region();
         VBox.setVgrow(vSpacer, Priority.ALWAYS);
 
-        VBox root = new VBox(10, projectRow, timerLabel, toggleButton, vSpacer, bottomBar);
+        VBox root = new VBox(10, projectRow, timerLabel, stats, toggleButton, vSpacer, bottomBar);
         root.setPadding(new Insets(12));
         root.setAlignment(Pos.TOP_CENTER);
         root.getStyleClass().add("root");
 
-        Scene scene = new Scene(root, 320, 220);
+        Scene scene = new Scene(root, 320, 280);
         scene.getStylesheets().add(App.class.getResource("/styles.css").toExternalForm());
         return scene;
     }
@@ -162,30 +181,60 @@ public class App extends Application {
             }
             runningSince = LocalDateTime.now();
             runningEntryId = timeEntryDao.start(project.id(), runningSince);
+            refreshTotals(project); // capture the committed base before this session
             projectCombo.setDisable(true);
             toggleButton.setText("Stop");
             statusLabel.setText("Tracking — " + project.name());
             ticker.play();
             updateTimerLabel();
         } else {
+            Project project = projectCombo.getValue();
             timeEntryDao.stop(runningEntryId, LocalDateTime.now());
             ticker.stop();
             runningEntryId = null;
             runningSince = null;
             projectCombo.setDisable(false);
             toggleButton.setText("Start");
-            timerLabel.setText("00:00:00");
+            timerLabel.setText(formatHms(0));
             statusLabel.setText("Saved");
+            refreshTotals(project); // now includes the session just saved
         }
+    }
+
+    /** Loads committed today/all-time totals for a project into the labels and the live base. */
+    private void refreshTotals(Project project) {
+        if (project == null) {
+            baseTodaySeconds = 0;
+            baseTotalSeconds = 0;
+        } else {
+            baseTodaySeconds = timeEntryDao.totalSeconds(project.id(), true);
+            baseTotalSeconds = timeEntryDao.totalSeconds(project.id(), false);
+        }
+        todayLabel.setText(formatHms(baseTodaySeconds));
+        totalLabel.setText(formatHms(baseTotalSeconds));
     }
 
     private void updateTimerLabel() {
         if (runningSince == null) {
             return;
         }
-        long seconds = java.time.Duration.between(runningSince, LocalDateTime.now()).getSeconds();
-        timerLabel.setText(String.format("%02d:%02d:%02d",
-                seconds / 3600, (seconds % 3600) / 60, seconds % 60));
+        long elapsed = java.time.Duration.between(runningSince, LocalDateTime.now()).getSeconds();
+        timerLabel.setText(formatHms(elapsed));
+        todayLabel.setText(formatHms(baseTodaySeconds + elapsed));
+        totalLabel.setText(formatHms(baseTotalSeconds + elapsed));
+    }
+
+    private static String formatHms(long seconds) {
+        return String.format("%02d:%02d:%02d", seconds / 3600, (seconds % 3600) / 60, seconds % 60);
+    }
+
+    private static VBox statBox(String caption, Label value) {
+        Label captionLabel = new Label(caption);
+        captionLabel.getStyleClass().add("stat-caption");
+        value.getStyleClass().add("stat-value");
+        VBox box = new VBox(2, captionLabel, value);
+        box.setAlignment(Pos.CENTER);
+        return box;
     }
 
     private void showProjectDialog(Stage owner) {
