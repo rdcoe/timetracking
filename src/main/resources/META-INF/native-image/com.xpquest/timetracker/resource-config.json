@@ -1,0 +1,9 @@
+{
+  "resources": {
+    "includes": [
+      { "pattern": "schema.sql" },
+      { "pattern": "styles.css" },
+      { "pattern": "org/h2/.*" }
+    ]
+  }
+}

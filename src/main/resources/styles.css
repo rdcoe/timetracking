@@ -1,0 +1,31 @@
+.root {
+    -fx-background-color: #1e1e2e;
+}
+
+.label {
+    -fx-text-fill: #cdd6f4;
+}
+
+.timer {
+    -fx-font-family: "monospace";
+    -fx-font-size: 36px;
+    -fx-font-weight: bold;
+    -fx-text-fill: #a6e3a1;
+}
+
+.toggle {
+    -fx-font-size: 14px;
+    -fx-background-radius: 6;
+    -fx-background-color: #89b4fa;
+    -fx-text-fill: #1e1e2e;
+    -fx-font-weight: bold;
+}
+
+.toggle:hover {
+    -fx-background-color: #74c7ec;
+}
+
+.status {
+    -fx-font-size: 11px;
+    -fx-text-fill: #9399b2;
+}
