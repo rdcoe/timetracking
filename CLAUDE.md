@@ -12,15 +12,20 @@ server framework** (Quarkus/Spring): it is a single desktop application process.
 ## Commands
 
 ```bash
-mvn javafx:run                      # run on a normal JVM (primary dev loop)
-mvn compile                         # compile only
-mvn gluonfx:build gluonfx:package   # build a native executable for the host OS
-mvn gluonfx:runagent                # run under the GraalVM tracing agent to (re)generate native config
+mvn javafx:run            # run on a normal JVM (primary dev loop; any Maven/JDK 21)
+mvn compile               # compile only
+./mvnw gluonfx:build      # build the native executable for the host OS
+./mvnw gluonfx:runagent   # run under the GraalVM tracing agent to (re)generate native config
 ```
 
-There is no test suite yet. Native builds require a GraalVM JDK 21 and a C
-toolchain; cross-compiling is not supported, so the Windows binary must be built
-on Windows and the Linux binary on Linux (`gluonfx.target` is `host`).
+No test suite yet. Native builds are version-locked — use `./mvnw` (pinned to
+Maven 3.8.8; the GluonFX 1.0.23 plugin breaks on 3.9.x), with `GRAALVM_HOME`
+pointing at a **GraalVM for JDK 21** (not 25). `gluonfx:build` produces the
+runnable binary under `target/gluonfx/<arch>/` — there is no package/installer
+step. Cross-compiling is unsupported (Windows binary on Windows, Linux on Linux;
+`gluonfx.target` is `host`). See README for the full version table and the
+Windows toolchain (x64 Native Tools prompt + the `windows-native` profile that
+links `management_ext.lib`/`psapi.lib`).
 
 ## Architecture
 

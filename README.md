@@ -16,47 +16,70 @@ GraalVM / GluonFX.
 - Auto-stops the running timer when the machine sleeps, trimming the slept time
   out (the entry ends at the last moment the machine was awake).
 
-## Requirements
-
-- JDK 21 (a [GraalVM](https://www.graalvm.org/) build is required for native images).
-- Maven 3.9+.
-- For native builds: a working C toolchain (see the
-  [GluonFX prerequisites](https://docs.gluonhq.com/#_platforms)). Windows
-  executables must be built **on Windows**; Linux executables **on Linux**.
-
 ## Run during development (normal JVM)
+
+No special toolchain needed — any JDK 21 and Maven:
 
 ```bash
 mvn javafx:run
 ```
 
-## Build native executables
+## Building native executables
 
-The GluonFX plugin (1.0.23, the last version that builds native images on
-Windows) was compiled against Maven 3.8.8 internals and breaks on Maven 3.9.x.
-Use the bundled Maven Wrapper, which is pinned to 3.8.8, so the version is
-correct regardless of your system Maven:
+The native-image toolchain is version-sensitive. These exact versions are known
+to work together; mixing in newer ones will fail (see the notes below):
+
+| Component   | Required version | Why |
+|-------------|------------------|-----|
+| GraalVM     | **for JDK 21** (e.g. `graalvm-jdk-21`) | Substrate needs Java ≥ 21; JDK 25 postdates the plugin and breaks. Set `GRAALVM_HOME` to it. |
+| GluonFX plugin | **1.0.23** (pinned in `pom.xml`) | 1.0.24/1.0.25 removed Windows native-image support. |
+| Maven       | **3.8.8** (use the bundled `./mvnw`) | Plugin 1.0.23 is built against 3.8.8 internals and breaks on 3.9.x. |
+| C toolchain | Linux: gcc + dev libs · Windows: VS 2022 Build Tools | Native-image compiles and links C. |
+
+Cross-compiling is not supported: build the **Linux** binary on Linux and the
+**Windows** binary on Windows (`target=host`).
+
+### Build command
+
+Always use the wrapper (`./mvnw`), which pins Maven 3.8.8. **Do not** use a
+system `mvn` for the `gluonfx:*` goals — `mvn javafx:run`/`compile` are fine.
 
 ```bash
-# Linux / macOS:
-./mvnw gluonfx:build gluonfx:package
-# Windows (from the x64 Native Tools Command Prompt):
-mvnw.cmd gluonfx:build gluonfx:package
+# Linux:
+./mvnw gluonfx:build
+
+# Windows — from the "x64 Native Tools Command Prompt for VS 2022"
+# (the x64 one; a plain or x86 prompt fails the toolchain check):
+mvnw.cmd gluonfx:build
 ```
 
-Builds for whichever OS you run it on (`target=host`). Plain `mvn` works for
-day-to-day `compile` / `javafx:run`; only the `gluonfx:*` goals need 3.8.8.
+The runnable binary lands at `target/gluonfx/<arch>/XP Quest Time Tracker[.exe]`.
+(`gluonfx:build` includes the link step and produces the executable — there is
+no separate packaging/installer step.)
 
-Output lands under `target/gluonfx/<arch>/`. Run on Linux and Windows
-respectively to produce each platform's binary.
+### Platform setup
 
-> H2 uses reflection in spots, so the first native build may need additional
-> GraalVM config. If the native binary throws reflection/resource errors, run
-> the app once under the GraalVM tracing agent and commit the generated config:
->
-> ```bash
-> mvn gluonfx:runagent   # exercise the UI, then close it
-> ```
+**Linux** — gcc and the JavaFX native dev libraries:
+
+```bash
+sudo apt install gcc g++ zlib1g-dev libasound2-dev libavcodec-dev \
+  libavformat-dev libavutil-dev libfreetype6-dev libgl-dev libglib2.0-dev \
+  libgtk-3-dev libpango1.0-dev libx11-dev libxtst-dev
+```
+
+**Windows** — install **Build Tools for Visual Studio 2022** with the
+**"Desktop development with C++"** workload (this provides `cl.exe`, the linker,
+and the Windows SDK — you do *not* open the project in Visual Studio). Then build
+from the **x64 Native Tools Command Prompt for VS 2022**. The `windows-native`
+Maven profile (in `pom.xml`) auto-links the extra libraries the linker needs
+(`management_ext.lib` from GraalVM + the SDK's `psapi.lib`); it reads
+`GRAALVM_HOME`, so make sure that is set.
+
+> **Regenerating native config:** H2 and JavaFX use reflection, so a native
+> binary can need extra GraalVM config captured by running the app under the
+> tracing agent. If a build/run hits reflection or resource errors, run
+> `./mvnw gluonfx:runagent`, exercise the UI (register a project, start/stop the
+> timer), close the app, and rebuild.
 
 ## Inspecting the database with DBeaver
 

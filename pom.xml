@@ -48,7 +48,7 @@
                 </configuration>
             </plugin>
 
-            <!-- Build native executables:  mvn gluonfx:build gluonfx:package
+            <!-- Build native executables:  ./mvnw gluonfx:build
                  Pinned to 1.0.23: 1.0.24/1.0.25 dropped Windows native-image
                  support ("not yet supported on Windows with this version").
                  1.0.23 (Substrate 0.0.63) builds on Linux AND Windows, and its
