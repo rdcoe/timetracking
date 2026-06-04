@@ -39,6 +39,7 @@ import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.time.format.DateTimeParseException;
 import java.util.List;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -158,12 +159,12 @@ public class App extends Application {
         manualAddRow = new HBox(6, addCaption, addTimeField, addButton);
         manualAddRow.setAlignment(Pos.CENTER);
 
-        // Writes today's per-workstream time summary to disk for the
-        // xpquest-daily-log skill to pick up. Allowed while tracking — it only
-        // reads completed entries, so the live session simply isn't included yet.
+        // Writes a per-day time summary for every day from the last checkpoint
+        // through today, then advances the checkpoint. Allowed while tracking — it
+        // only reads completed entries, so the live session isn't included yet.
         Button summaryButton = new Button("Daily Summary");
         summaryButton.setTooltip(new Tooltip(
-                "Write today's per-workstream time summary for the daily-log skill"));
+                "Write per-day time summaries from the last checkpoint through today"));
         summaryButton.setOnAction(e -> writeDailySummary());
         HBox summaryRow = new HBox(summaryButton);
         summaryRow.setAlignment(Pos.CENTER);
@@ -300,11 +301,23 @@ public class App extends Application {
     }
 
     /**
-     * Writes today's per-project tracked totals to
-     * {@code daily-summary-<DATE>.json} for the xpquest-daily-log skill to consume.
-     * Each project is tagged with a workstream inferred from its code (see
-     * {@link #workstream}) so the skill can route XP Quest engineering/SR&ED hours
-     * into the daily logs and client hours into a separate log.
+     * Filename of the date checkpoint, co-located with the summary files. It only
+     * tracks how far summary generation has reached.
+     */
+    private static final String CHECKPOINT_NAME = ".daily-summary-checkpoint";
+
+    /**
+     * Writes one {@code daily-summary-<DATE>.json} per day, for every day from the
+     * last checkpoint through today, then advances the checkpoint to today. Each
+     * file holds that day's per-project tracked totals, each project tagged with a
+     * workstream inferred from its code (see {@link #workstream}). Days with no
+     * completed time are skipped; today's file is rewritten on every press (its
+     * tracking is still in progress).
+     *
+     * <p>The checkpoint ({@value #CHECKPOINT_NAME}) lives in the same directory as
+     * the summaries and records how far this app has generated — nothing more. The
+     * first press with no checkpoint covers everything from the earliest completed
+     * entry.
      *
      * <p>Target directory is {@code $XPQUEST_SUMMARY_DIR} when set, otherwise
      * {@code user.home/.xpquest} — which is {@code %USERPROFILE%\.xpquest} on
@@ -313,19 +326,58 @@ public class App extends Application {
      */
     private void writeDailySummary() {
         LocalDate today = LocalDate.now();
-        List<DailySummaryRow> rows = timeEntryDao.dailySummary(today);
-        if (rows.isEmpty()) {
-            statusLabel.setText("No completed time logged today");
-            return;
+        Path dir = summaryDir();
+        Path checkpoint = dir.resolve(CHECKPOINT_NAME);
+        LocalDate start = readCheckpoint(checkpoint, today);
+        if (start.isAfter(today)) {
+            start = today;
         }
-        Path out = summaryDir().resolve("daily-summary-" + today + ".json");
         try {
-            Files.createDirectories(out.getParent());
-            Files.writeString(out, buildSummaryJson(today, rows), StandardCharsets.UTF_8);
-            statusLabel.setText("Wrote " + out.getFileName());
+            Files.createDirectories(dir);
+            int written = 0;
+            LocalDate lastWritten = null;
+            for (LocalDate day = start; !day.isAfter(today); day = day.plusDays(1)) {
+                List<DailySummaryRow> rows = timeEntryDao.dailySummary(day);
+                if (rows.isEmpty()) {
+                    continue;
+                }
+                Files.writeString(dir.resolve("daily-summary-" + day + ".json"),
+                        buildSummaryJson(day, rows), StandardCharsets.UTF_8);
+                written++;
+                lastWritten = day;
+            }
+            // Advance the checkpoint to today: this app has now generated through
+            // today (today's file will be rewritten on the next press as it fills).
+            Files.writeString(checkpoint, today + System.lineSeparator(), StandardCharsets.UTF_8);
+            if (written == 0) {
+                statusLabel.setText("No completed time to summarise");
+            } else {
+                statusLabel.setText("Wrote " + written + " day" + (written == 1 ? "" : "s")
+                        + " through " + lastWritten);
+            }
         } catch (IOException ex) {
             statusLabel.setText("Summary write failed: " + ex.getMessage());
         }
+    }
+
+    /**
+     * Reads the checkpoint date (the start of the range to generate). Falls back to
+     * the earliest completed entry when the file is missing or unreadable, and to
+     * {@code today} when there are no entries at all.
+     */
+    private LocalDate readCheckpoint(Path checkpoint, LocalDate today) {
+        try {
+            if (Files.exists(checkpoint)) {
+                String text = Files.readString(checkpoint, StandardCharsets.UTF_8).trim();
+                if (!text.isEmpty()) {
+                    return LocalDate.parse(text);
+                }
+            }
+        } catch (IOException | DateTimeParseException ignored) {
+            // Unreadable or malformed — fall back to the earliest entry below.
+        }
+        LocalDate earliest = timeEntryDao.earliestEntryDate();
+        return earliest != null ? earliest : today;
     }
 
     /** Summary output dir: {@code $XPQUEST_SUMMARY_DIR} if set, else {@code user.home/.xpquest}. */

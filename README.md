@@ -13,10 +13,14 @@ GraalVM / GluonFX.
 - Quick project dropdown + one-click Start/Stop timer.
 - Manually log a block of time (HH:MM) onto the selected project (disabled while
   the timer is running).
-- **Daily Summary** button: exports today's per-project tracked time to
-  `daily-summary-<DATE>.json` for the `xpquest-daily-log` skill to consume. Each
-  project is tagged with a workstream inferred from its code (`xpq-eng*` →
-  engineering, `xpq-sred*` → SR&ED, anything else → client). Written to
+- **Daily Summary** button: exports per-project tracked time to
+  `daily-summary-<DATE>.json`, one file per day from the last checkpoint through
+  today. Each project is tagged with a workstream inferred from its code
+  (`xpq-eng*` → engineering, `xpq-sred*` → SR&ED, anything else → client). A
+  co-located `.daily-summary-checkpoint` (a single date line) records how far
+  generation has reached: the button reads it for the range start (no file → the
+  earliest completed entry) and advances it to today afterward. Days with no
+  completed time are skipped; today's file is rewritten on every press. Written to
   `$XPQUEST_SUMMARY_DIR` if set, otherwise `~/.xpquest` (same folder as the
   database; on Windows that is `%USERPROFILE%\.xpquest`).
 - Lightweight single-file H2 database, administrable from DBeaver.
