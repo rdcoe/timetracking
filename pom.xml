@@ -64,4 +64,37 @@
             </plugin>
         </plugins>
     </build>
+
+    <profiles>
+        <!--
+            On Windows, the native image pulls in com.sun.management's OS MXBean
+            (H2 queries total physical memory), whose JNI methods live in the JDK
+            static lib management_ext. GluonFX's link step doesn't add it
+            automatically, so the link fails with:
+              unresolved external symbol Java_com_sun_management_internal_OperatingSystemImpl_*
+            Feed that lib to the linker explicitly. Windows-only so the Linux
+            build (different lib naming/linking) is unaffected.
+        -->
+        <profile>
+            <id>windows-native</id>
+            <activation>
+                <os>
+                    <family>windows</family>
+                </os>
+            </activation>
+            <build>
+                <plugins>
+                    <plugin>
+                        <groupId>com.gluonhq</groupId>
+                        <artifactId>gluonfx-maven-plugin</artifactId>
+                        <configuration>
+                            <linkerArgs>
+                                <arg>${env.GRAALVM_HOME}\lib\static\windows-amd64\management_ext.lib</arg>
+                            </linkerArgs>
+                        </configuration>
+                    </plugin>
+                </plugins>
+            </build>
+        </profile>
+    </profiles>
 </project>
