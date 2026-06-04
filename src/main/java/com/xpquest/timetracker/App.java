@@ -33,6 +33,8 @@ import javafx.util.StringConverter;
 
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 /**
  * XP Quest Time Tracker — an always-on-top JavaFX widget.
@@ -53,6 +55,8 @@ public class App extends Application {
     private Label todayLabel;
     private Label totalLabel;
     private Button toggleButton;
+    private TextField addTimeField;
+    private HBox manualAddRow;
     private Label statusLabel;
     private Timeline ticker;
 
@@ -133,6 +137,20 @@ public class App extends Application {
         toggleButton.getStyleClass().add("toggle");
         toggleButton.setOnAction(e -> toggleTimer());
 
+        // Manually log a block of time (HH:MM) onto the selected project.
+        // Disabled while the timer runs so it can't race the live session.
+        Label addCaption = new Label("Add time");
+        addCaption.getStyleClass().add("stat-caption");
+        addTimeField = new TextField();
+        addTimeField.setPromptText("HH:MM");
+        addTimeField.setPrefColumnCount(5);
+        addTimeField.setMaxWidth(64);
+        addTimeField.setOnAction(e -> addManualTime()); // Enter submits
+        Button addButton = new Button("Add");
+        addButton.setOnAction(e -> addManualTime());
+        manualAddRow = new HBox(6, addCaption, addTimeField, addButton);
+        manualAddRow.setAlignment(Pos.CENTER);
+
         statusLabel = new Label("Ready");
         statusLabel.getStyleClass().add("status");
 
@@ -154,15 +172,20 @@ public class App extends Application {
         bottomBar.setAlignment(Pos.CENTER_LEFT);
         bottomBar.setMaxWidth(Double.MAX_VALUE);
 
-        Region vSpacer = new Region();
-        VBox.setVgrow(vSpacer, Priority.ALWAYS);
+        // Equal-growing spacers above and below the main controls centre them
+        // vertically; the status / always-on-top bar stays pinned at the bottom.
+        Region vSpacerTop = new Region();
+        VBox.setVgrow(vSpacerTop, Priority.ALWAYS);
+        Region vSpacerBottom = new Region();
+        VBox.setVgrow(vSpacerBottom, Priority.ALWAYS);
 
-        VBox root = new VBox(10, projectRow, timerLabel, stats, toggleButton, vSpacer, bottomBar);
+        VBox root = new VBox(10, vSpacerTop, projectRow, timerLabel, stats, toggleButton,
+                manualAddRow, vSpacerBottom, bottomBar);
         root.setPadding(new Insets(12));
         root.setAlignment(Pos.TOP_CENTER);
         root.getStyleClass().add("root");
 
-        Scene scene = new Scene(root, 320, 280);
+        Scene scene = new Scene(root, 320, 320);
         scene.getStylesheets().add(App.class.getResource("/styles.css").toExternalForm());
         return scene;
     }
@@ -191,6 +214,7 @@ public class App extends Application {
             runningEntryId = timeEntryDao.start(project.id(), runningSince);
             refreshTotals(project); // capture the committed base before this session
             projectCombo.setDisable(true);
+            manualAddRow.setDisable(true);
             toggleButton.setText("Stop");
             statusLabel.setText("Tracking — " + project.name());
             ticker.play();
@@ -212,10 +236,50 @@ public class App extends Application {
         runningSince = null;
         lastTick = null;
         projectCombo.setDisable(false);
+        manualAddRow.setDisable(false);
         toggleButton.setText("Start");
         timerLabel.setText(formatHms(0));
         statusLabel.setText(status);
         refreshTotals(project);
+    }
+
+    /**
+     * Logs a manually-entered block of time (HH:MM) onto the selected project as
+     * a completed entry ending now, so it counts toward Today and Total. No-op
+     * while the timer is running, to avoid racing the live session.
+     */
+    private void addManualTime() {
+        if (runningEntryId != null) {
+            statusLabel.setText("Stop the timer first");
+            return;
+        }
+        Project project = projectCombo.getValue();
+        if (project == null) {
+            statusLabel.setText("Pick a project first");
+            return;
+        }
+        long seconds = parseHhmm(addTimeField.getText());
+        if (seconds <= 0) {
+            statusLabel.setText("Enter time as HH:MM");
+            return;
+        }
+        LocalDateTime end = LocalDateTime.now();
+        timeEntryDao.addManual(project.id(), end.minusSeconds(seconds), end);
+        addTimeField.clear();
+        refreshTotals(project);
+        statusLabel.setText("Added " + formatHms(seconds));
+    }
+
+    /** Parses "H:MM" / "HH:MM" into seconds; returns -1 if malformed. */
+    private static long parseHhmm(String text) {
+        if (text == null) {
+            return -1;
+        }
+        Matcher m = Pattern.compile("^\\s*(\\d+):([0-5]?\\d)\\s*$").matcher(text);
+        if (!m.matches()) {
+            return -1;
+        }
+        return Long.parseLong(m.group(1)) * 3600 + Long.parseLong(m.group(2)) * 60;
     }
 
     /**

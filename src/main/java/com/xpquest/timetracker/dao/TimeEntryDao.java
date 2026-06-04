@@ -49,6 +49,20 @@ public final class TimeEntryDao {
         }
     }
 
+    /** Inserts a manually-entered completed entry spanning [start, end]. */
+    public void addManual(long projectId, LocalDateTime start, LocalDateTime end) {
+        String sql = "INSERT INTO time_entry(project_id, start_time, end_time) VALUES (?, ?, ?)";
+        try (Connection c = db.connection();
+             PreparedStatement ps = c.prepareStatement(sql)) {
+            ps.setLong(1, projectId);
+            ps.setTimestamp(2, Timestamp.valueOf(start));
+            ps.setTimestamp(3, Timestamp.valueOf(end));
+            ps.executeUpdate();
+        } catch (SQLException e) {
+            throw new IllegalStateException("Failed to add manual time entry", e);
+        }
+    }
+
     /**
      * Sum of completed (stopped) tracked seconds for a project. Open entries are
      * ignored — the live session is added on top in the UI.
