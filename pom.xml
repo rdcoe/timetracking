@@ -38,6 +38,15 @@
     <build>
         <finalName>xpquest-timetracker</finalName>
         <plugins>
+            <!-- Pin the compiler plugin: Maven 3.8.8 (the wrapper's pinned version)
+                 defaults to maven-compiler-plugin 3.1, which predates <release> and
+                 ignores maven.compiler.release, falling back to source/target 5. -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-compiler-plugin</artifactId>
+                <version>3.13.0</version>
+            </plugin>
+
             <!-- Run on a normal JVM during development:  mvn javafx:run -->
             <plugin>
                 <groupId>org.openjfx</groupId>
