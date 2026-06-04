@@ -11,6 +11,8 @@ GraalVM / GluonFX.
 - Always-on-top widget window (toggleable) titled *XP Quest Time Tracker*.
 - Register projects: id/code, name, description, client name.
 - Quick project dropdown + one-click Start/Stop timer.
+- Manually log a block of time (HH:MM) onto the selected project (disabled while
+  the timer is running).
 - Lightweight single-file H2 database, administrable from DBeaver.
 - The database engine starts and stops with the app.
 - Auto-stops the running timer when the machine sleeps, trimming the slept time
