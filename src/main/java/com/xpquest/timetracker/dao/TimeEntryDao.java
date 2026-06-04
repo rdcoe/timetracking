@@ -91,10 +91,28 @@ public final class TimeEntryDao {
     }
 
     /**
+     * Date of the earliest completed (stopped) time entry, or {@code null} when
+     * there are no completed entries. Used as the default start of the summary
+     * range when no checkpoint file exists yet.
+     */
+    public LocalDate earliestEntryDate() {
+        String sql = "SELECT CAST(MIN(start_time) AS DATE) FROM time_entry WHERE end_time IS NOT NULL";
+        try (Connection c = db.connection();
+             PreparedStatement ps = c.prepareStatement(sql);
+             ResultSet rs = ps.executeQuery()) {
+            rs.next();
+            Date d = rs.getDate(1);
+            return d == null ? null : d.toLocalDate();
+        } catch (SQLException e) {
+            throw new IllegalStateException("Failed to find earliest time entry", e);
+        }
+    }
+
+    /**
      * Per-project tracked totals for a single day, one row per project that has
      * completed (stopped) time on that date. Joined to {@code project} so the
-     * summary carries the code/name/description/client the daily-log skill needs.
-     * Open entries are ignored. Ordered by code for a stable summary.
+     * summary carries the code/name/description/client. Open entries are ignored.
+     * Ordered by code for a stable summary.
      */
     public List<DailySummaryRow> dailySummary(LocalDate date) {
         String sql = "SELECT p.code, p.name, p.description, p.client_name, "

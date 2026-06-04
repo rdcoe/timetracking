@@ -2,7 +2,7 @@ package com.xpquest.timetracker.model;
 
 /**
  * One project's tracked total for a single day, used to build the daily summary
- * that the {@code xpquest-daily-log} skill consumes.
+ * export.
  *
  * @param code        project code (drives workstream inference, e.g. "xpq-eng")
  * @param name        project display name
