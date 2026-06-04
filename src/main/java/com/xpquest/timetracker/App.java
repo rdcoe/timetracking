@@ -3,6 +3,7 @@ package com.xpquest.timetracker;
 import com.xpquest.timetracker.dao.ProjectDao;
 import com.xpquest.timetracker.dao.TimeEntryDao;
 import com.xpquest.timetracker.db.Database;
+import com.xpquest.timetracker.model.DailySummaryRow;
 import com.xpquest.timetracker.model.Project;
 import javafx.animation.Animation;
 import javafx.animation.KeyFrame;
@@ -31,6 +32,12 @@ import javafx.stage.Stage;
 import javafx.util.Duration;
 import javafx.util.StringConverter;
 
+import java.io.IOException;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.regex.Matcher;
@@ -151,6 +158,16 @@ public class App extends Application {
         manualAddRow = new HBox(6, addCaption, addTimeField, addButton);
         manualAddRow.setAlignment(Pos.CENTER);
 
+        // Writes today's per-workstream time summary to disk for the
+        // xpquest-daily-log skill to pick up. Allowed while tracking — it only
+        // reads completed entries, so the live session simply isn't included yet.
+        Button summaryButton = new Button("Daily Summary");
+        summaryButton.setTooltip(new Tooltip(
+                "Write today's per-workstream time summary for the daily-log skill"));
+        summaryButton.setOnAction(e -> writeDailySummary());
+        HBox summaryRow = new HBox(summaryButton);
+        summaryRow.setAlignment(Pos.CENTER);
+
         statusLabel = new Label("Ready");
         statusLabel.getStyleClass().add("status");
 
@@ -180,7 +197,7 @@ public class App extends Application {
         VBox.setVgrow(vSpacerBottom, Priority.ALWAYS);
 
         VBox root = new VBox(10, vSpacerTop, projectRow, timerLabel, stats, toggleButton,
-                manualAddRow, vSpacerBottom, bottomBar);
+                manualAddRow, summaryRow, vSpacerBottom, bottomBar);
         root.setPadding(new Insets(12));
         root.setAlignment(Pos.TOP_CENTER);
         root.getStyleClass().add("root");
@@ -280,6 +297,109 @@ public class App extends Application {
             return -1;
         }
         return Long.parseLong(m.group(1)) * 3600 + Long.parseLong(m.group(2)) * 60;
+    }
+
+    /**
+     * Writes today's per-project tracked totals to
+     * {@code daily-summary-<DATE>.json} for the xpquest-daily-log skill to consume.
+     * Each project is tagged with a workstream inferred from its code (see
+     * {@link #workstream}) so the skill can route XP Quest engineering/SR&ED hours
+     * into the daily logs and client hours into a separate log.
+     *
+     * <p>Target directory is {@code $XPQUEST_SUMMARY_DIR} when set, otherwise
+     * {@code user.home/.xpquest} — which is {@code %USERPROFILE%\.xpquest} on
+     * Windows and {@code $HOME/.xpquest} on Linux (one code path, OS-native home,
+     * the same proven-writable dir that already holds the H2 database file).
+     */
+    private void writeDailySummary() {
+        LocalDate today = LocalDate.now();
+        List<DailySummaryRow> rows = timeEntryDao.dailySummary(today);
+        if (rows.isEmpty()) {
+            statusLabel.setText("No completed time logged today");
+            return;
+        }
+        Path out = summaryDir().resolve("daily-summary-" + today + ".json");
+        try {
+            Files.createDirectories(out.getParent());
+            Files.writeString(out, buildSummaryJson(today, rows), StandardCharsets.UTF_8);
+            statusLabel.setText("Wrote " + out.getFileName());
+        } catch (IOException ex) {
+            statusLabel.setText("Summary write failed: " + ex.getMessage());
+        }
+    }
+
+    /** Summary output dir: {@code $XPQUEST_SUMMARY_DIR} if set, else {@code user.home/.xpquest}. */
+    private static Path summaryDir() {
+        String override = System.getenv("XPQUEST_SUMMARY_DIR");
+        if (override != null && !override.isBlank()) {
+            return Paths.get(override.trim());
+        }
+        return Paths.get(System.getProperty("user.home"), ".xpquest");
+    }
+
+    /**
+     * Maps a project code to its workstream: {@code xpq-eng*} → engineering,
+     * {@code xpq-sred*} → sred, anything else (e.g. {@code em-scotia}) → client.
+     */
+    private static String workstream(String code) {
+        String c = code == null ? "" : code.trim().toLowerCase();
+        if (c.startsWith("xpq-sred")) {
+            return "sred";
+        }
+        if (c.startsWith("xpq-eng")) {
+            return "engineering";
+        }
+        return "client";
+    }
+
+    /** Serialises the day's per-project totals as JSON (no JSON lib on the classpath). */
+    private static String buildSummaryJson(LocalDate date, List<DailySummaryRow> rows) {
+        StringBuilder sb = new StringBuilder();
+        sb.append("{\n");
+        sb.append("  \"date\": \"").append(date).append("\",\n");
+        sb.append("  \"generated_at\": \"").append(LocalDateTime.now()).append("\",\n");
+        sb.append("  \"projects\": [\n");
+        for (int i = 0; i < rows.size(); i++) {
+            DailySummaryRow r = rows.get(i);
+            sb.append("    {\n");
+            sb.append("      \"code\": ").append(jsonString(r.code())).append(",\n");
+            sb.append("      \"name\": ").append(jsonString(r.name())).append(",\n");
+            sb.append("      \"description\": ").append(jsonString(r.description())).append(",\n");
+            sb.append("      \"client\": ").append(jsonString(r.client())).append(",\n");
+            sb.append("      \"workstream\": \"").append(workstream(r.code())).append("\",\n");
+            sb.append("      \"seconds\": ").append(r.seconds()).append(",\n");
+            sb.append("      \"hours\": ").append(String.format("%.2f", r.seconds() / 3600.0)).append("\n");
+            sb.append("    }").append(i < rows.size() - 1 ? "," : "").append("\n");
+        }
+        sb.append("  ]\n");
+        sb.append("}\n");
+        return sb.toString();
+    }
+
+    /** Quotes and escapes a string as a JSON string literal (null → ""). */
+    private static String jsonString(String v) {
+        if (v == null) {
+            return "\"\"";
+        }
+        StringBuilder sb = new StringBuilder("\"");
+        for (int i = 0; i < v.length(); i++) {
+            char ch = v.charAt(i);
+            switch (ch) {
+                case '"' -> sb.append("\\\"");
+                case '\\' -> sb.append("\\\\");
+                case '\n' -> sb.append("\\n");
+                case '\r' -> sb.append("\\r");
+                case '\t' -> sb.append("\\t");
+                default -> {
+                    if (ch < 0x20) {
+                        sb.append(String.format("\\u%04x", (int) ch));
+                    } else {
+                        sb.append(ch);
+                    }
+                }
+            }
+        }
+        return sb.append('"').toString();
     }
 
     /**

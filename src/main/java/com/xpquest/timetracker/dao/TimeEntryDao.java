@@ -1,14 +1,19 @@
 package com.xpquest.timetracker.dao;
 
 import com.xpquest.timetracker.db.Database;
+import com.xpquest.timetracker.model.DailySummaryRow;
 
 import java.sql.Connection;
+import java.sql.Date;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Statement;
 import java.sql.Timestamp;
+import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.util.ArrayList;
+import java.util.List;
 
 /** Writes time-entry rows: one row per start/stop tracking session. */
 public final class TimeEntryDao {
@@ -82,6 +87,40 @@ public final class TimeEntryDao {
             }
         } catch (SQLException e) {
             throw new IllegalStateException("Failed to total time entries", e);
+        }
+    }
+
+    /**
+     * Per-project tracked totals for a single day, one row per project that has
+     * completed (stopped) time on that date. Joined to {@code project} so the
+     * summary carries the code/name/description/client the daily-log skill needs.
+     * Open entries are ignored. Ordered by code for a stable summary.
+     */
+    public List<DailySummaryRow> dailySummary(LocalDate date) {
+        String sql = "SELECT p.code, p.name, p.description, p.client_name, "
+                + "SUM(DATEDIFF(SECOND, te.start_time, te.end_time)) AS seconds "
+                + "FROM time_entry te JOIN project p ON p.id = te.project_id "
+                + "WHERE te.end_time IS NOT NULL AND CAST(te.start_time AS DATE) = ? "
+                + "GROUP BY p.id, p.code, p.name, p.description, p.client_name "
+                + "HAVING SUM(DATEDIFF(SECOND, te.start_time, te.end_time)) > 0 "
+                + "ORDER BY p.code";
+        try (Connection c = db.connection();
+             PreparedStatement ps = c.prepareStatement(sql)) {
+            ps.setDate(1, Date.valueOf(date));
+            try (ResultSet rs = ps.executeQuery()) {
+                List<DailySummaryRow> out = new ArrayList<>();
+                while (rs.next()) {
+                    out.add(new DailySummaryRow(
+                            rs.getString("code"),
+                            rs.getString("name"),
+                            rs.getString("description"),
+                            rs.getString("client_name"),
+                            rs.getLong("seconds")));
+                }
+                return out;
+            }
+        } catch (SQLException e) {
+            throw new IllegalStateException("Failed to build daily summary", e);
         }
     }
 }
