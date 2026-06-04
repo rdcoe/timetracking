@@ -90,6 +90,8 @@
                         <configuration>
                             <linkerArgs>
                                 <arg>${env.GRAALVM_HOME}\lib\static\windows-amd64\management_ext.lib</arg>
+                                <!-- management_ext calls Win32 GetProcessMemoryInfo, from the SDK's psapi.lib -->
+                                <arg>psapi.lib</arg>
                             </linkerArgs>
                         </configuration>
                     </plugin>
