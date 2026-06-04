@@ -48,11 +48,15 @@
                 </configuration>
             </plugin>
 
-            <!-- Build native executables:  mvn gluonfx:build gluonfx:package -->
+            <!-- Build native executables:  mvn gluonfx:build gluonfx:package
+                 Pinned to 1.0.23: 1.0.24/1.0.25 dropped Windows native-image
+                 support ("not yet supported on Windows with this version").
+                 1.0.23 (Substrate 0.0.63) builds on Linux AND Windows, and its
+                 minimums (GraalVM >= 22.1, Java >= 11) are met by GraalVM JDK 21. -->
             <plugin>
                 <groupId>com.gluonhq</groupId>
                 <artifactId>gluonfx-maven-plugin</artifactId>
-                <version>1.0.25</version>
+                <version>1.0.23</version>
                 <configuration>
                     <target>${gluonfx.target}</target>
                     <mainClass>${main.class}</mainClass>
