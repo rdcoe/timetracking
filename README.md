@@ -32,10 +32,20 @@ mvn javafx:run
 
 ## Build native executables
 
+The GluonFX plugin (1.0.23, the last version that builds native images on
+Windows) was compiled against Maven 3.8.8 internals and breaks on Maven 3.9.x.
+Use the bundled Maven Wrapper, which is pinned to 3.8.8, so the version is
+correct regardless of your system Maven:
+
 ```bash
-# Builds for whichever OS you run this on (target=host in the pom).
-mvn gluonfx:build gluonfx:package
+# Linux / macOS:
+./mvnw gluonfx:build gluonfx:package
+# Windows (from the x64 Native Tools Command Prompt):
+mvnw.cmd gluonfx:build gluonfx:package
 ```
+
+Builds for whichever OS you run it on (`target=host`). Plain `mvn` works for
+day-to-day `compile` / `javafx:run`; only the `gluonfx:*` goals need 3.8.8.
 
 Output lands under `target/gluonfx/<arch>/`. Run on Linux and Windows
 respectively to produce each platform's binary.
