@@ -79,6 +79,23 @@ sudo apt install gcc g++ zlib1g-dev libasound2-dev libavcodec-dev \
   libgtk-3-dev libpango1.0-dev libx11-dev libxtst-dev
 ```
 
+GraalVM 21 reorganised the SVM C-library layout — `libjvm.a` moved from
+`lib/svm/clibraries/linux-amd64/` into a `glibc/` subdirectory, but
+GluonFX 1.0.23 still looks in the old location. Symlink it once after
+installing GraalVM:
+
+```bash
+ln -s "$GRAALVM_HOME/lib/svm/clibraries/linux-amd64/glibc/libjvm.a" \
+      "$GRAALVM_HOME/lib/svm/clibraries/linux-amd64/libjvm.a"
+ln -s "$GRAALVM_HOME/lib/svm/clibraries/linux-amd64/glibc/liblibchelper.a" \
+      "$GRAALVM_HOME/lib/svm/clibraries/linux-amd64/liblibchelper.a"
+```
+
+The `linux-native` Maven profile (auto-activated on Linux, same as
+`windows-native` on Windows) feeds the two JDK static libs that H2 and the
+tracing agent pull in (`libmanagement_ext.a`, `libjaas.a`) to the linker. It
+reads `GRAALVM_HOME`, so make sure that is set before building.
+
 **Windows** — install **Build Tools for Visual Studio 2022** with the
 **"Desktop development with C++"** workload (this provides `cl.exe`, the linker,
 and the Windows SDK — you do *not* open the project in Visual Studio). Then build
