@@ -390,15 +390,17 @@ public class App extends Application {
     }
 
     /**
-     * Maps a project code to its workstream: {@code xpq-eng*} → engineering,
-     * {@code xpq-sred*} → sred, anything else (e.g. {@code acme-corp}) → client.
+     * Maps a project code to its workstream: any {@code xpq}-prefixed code is an
+     * XP Quest project (never a client) — {@code xpq-sred*} → sred, any other
+     * {@code xpq*} (e.g. {@code xpq-eng}, {@code xpq-techops}) → engineering.
+     * Anything else (e.g. {@code acme-corp}) → client.
      */
     private static String workstream(String code) {
         String c = code == null ? "" : code.trim().toLowerCase();
         if (c.startsWith("xpq-sred")) {
             return "sred";
         }
-        if (c.startsWith("xpq-eng")) {
+        if (c.startsWith("xpq")) {
             return "engineering";
         }
         return "client";
