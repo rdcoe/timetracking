@@ -18,6 +18,7 @@ import javafx.scene.control.ButtonBar;
 import javafx.scene.control.ButtonType;
 import javafx.scene.control.CheckBox;
 import javafx.scene.control.ComboBox;
+import javafx.scene.control.DatePicker;
 import javafx.scene.control.Dialog;
 import javafx.scene.control.Label;
 import javafx.scene.control.TextArea;
@@ -63,6 +64,7 @@ public class App extends Application {
     private Label todayLabel;
     private Label totalLabel;
     private Button toggleButton;
+    private DatePicker addDateField;
     private TextField addTimeField;
     private HBox manualAddRow;
     private Label statusLabel;
@@ -145,18 +147,21 @@ public class App extends Application {
         toggleButton.getStyleClass().add("toggle");
         toggleButton.setOnAction(e -> toggleTimer());
 
-        // Manually log a block of time (HH:MM) onto the selected project.
-        // Disabled while the timer runs so it can't race the live session.
-        Label addCaption = new Label("Add time");
-        addCaption.getStyleClass().add("stat-caption");
+        // Manually log a block of time (HH:MM) onto the selected project, on the
+        // chosen date (defaults to today). Disabled while the timer runs so it
+        // can't race the live session.
+        addDateField = new DatePicker(LocalDate.now());
+        addDateField.setPrefWidth(118);
+        addDateField.setTooltip(new Tooltip("Date to log the time on"));
         addTimeField = new TextField();
         addTimeField.setPromptText("HH:MM");
         addTimeField.setPrefColumnCount(5);
         addTimeField.setMaxWidth(64);
+        addTimeField.setTooltip(new Tooltip("Duration to add, HH:MM"));
         addTimeField.setOnAction(e -> addManualTime()); // Enter submits
         Button addButton = new Button("Add");
         addButton.setOnAction(e -> addManualTime());
-        manualAddRow = new HBox(6, addCaption, addTimeField, addButton);
+        manualAddRow = new HBox(6, addDateField, addTimeField, addButton);
         manualAddRow.setAlignment(Pos.CENTER);
 
         // Writes a per-day time summary for every day from the last checkpoint
@@ -263,8 +268,12 @@ public class App extends Application {
 
     /**
      * Logs a manually-entered block of time (HH:MM) onto the selected project as
-     * a completed entry ending now, so it counts toward Today and Total. No-op
-     * while the timer is running, to avoid racing the live session.
+     * a completed entry on the chosen date, so it counts toward Total (and Today
+     * when the date is today). For today the block ends now (matching the live
+     * session and never landing in the future); for any other date it is anchored
+     * at 09:00 so its {@code start_time} falls on that date — daily-summary
+     * attribution groups by {@code CAST(start_time AS DATE)}. No-op while the
+     * timer is running, to avoid racing the live session.
      */
     private void addManualTime() {
         if (runningEntryId != null) {
@@ -276,16 +285,32 @@ public class App extends Application {
             statusLabel.setText("Pick a project first");
             return;
         }
+        LocalDate date = addDateField.getValue();
+        if (date == null) {
+            statusLabel.setText("Pick a date");
+            return;
+        }
         long seconds = parseHhmm(addTimeField.getText());
         if (seconds <= 0) {
             statusLabel.setText("Enter time as HH:MM");
             return;
         }
-        LocalDateTime end = LocalDateTime.now();
-        timeEntryDao.addManual(project.id(), end.minusSeconds(seconds), end);
+        LocalDate today = LocalDate.now();
+        LocalDateTime start;
+        LocalDateTime end;
+        if (date.equals(today)) {
+            end = LocalDateTime.now();
+            start = end.minusSeconds(seconds);
+        } else {
+            start = date.atTime(9, 0);
+            end = start.plusSeconds(seconds);
+        }
+        timeEntryDao.addManual(project.id(), start, end);
         addTimeField.clear();
+        addDateField.setValue(today);
         refreshTotals(project);
-        statusLabel.setText("Added " + formatHms(seconds));
+        String where = date.equals(today) ? "" : " on " + date;
+        statusLabel.setText("Added " + formatHms(seconds) + where);
     }
 
     /** Parses "H:MM" / "HH:MM" into seconds; returns -1 if malformed. */
