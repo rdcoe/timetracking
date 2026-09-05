@@ -25,8 +25,14 @@ GraalVM / GluonFX.
   database; on Windows that is `%USERPROFILE%\.xpquest`).
 - Lightweight single-file H2 database, administrable from DBeaver.
 - The database engine starts and stops with the app.
-- Auto-stops the running timer when the machine sleeps, trimming the slept time
-  out (the entry ends at the last moment the machine was awake).
+- Rides through a machine sleep: when the machine wakes, the running timer keeps
+  going against the same project, with the slept time trimmed out (the pre-sleep
+  entry ends at the last moment the machine was awake and a fresh entry opens at
+  the wake instant). A native OS notification (Windows Action Center / Linux
+  notification popup) announces the resume, so it's visible even when the widget
+  is minimised, not on top, or on another virtual desktop. If no project is
+  selected, it just stops, as before. The tray notification is best-effort — where
+  no system tray is available the on-screen status line still shows what happened.
 
 ## Run during development (normal JVM)
 

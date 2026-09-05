@@ -69,6 +69,7 @@ public class App extends Application {
     private HBox manualAddRow;
     private Label statusLabel;
     private Timeline ticker;
+    private final TrayNotifier tray = new TrayNotifier();
 
     private Long runningEntryId;
     private LocalDateTime runningSince;
@@ -99,6 +100,10 @@ public class App extends Application {
 
         ticker = new Timeline(new KeyFrame(Duration.seconds(1), e -> onTick()));
         ticker.setCycleCount(Animation.INDEFINITE);
+
+        // Best-effort OS tray notifier for sleep/wake events, since the widget may
+        // be off-screen or not on top when the machine wakes.
+        tray.install();
 
         refreshProjects();
     }
@@ -484,7 +489,9 @@ public class App extends Application {
     /**
      * Per-second tick. Detects a system sleep (a tick gap far larger than the
      * expected ~1s, because the JVM was frozen while suspended) and, if found,
-     * stops tracking as of the last awake instant so the slept time isn't billed.
+     * hands off to {@link #resumeAfterSleep} — which closes the entry as of the
+     * last awake instant (so the slept time isn't billed) and reopens a fresh one
+     * for the same project, leaving the timer running.
      */
     private void onTick() {
         if (runningSince == null) {
@@ -493,11 +500,46 @@ public class App extends Application {
         LocalDateTime now = LocalDateTime.now();
         if (lastTick != null
                 && java.time.Duration.between(lastTick, now).getSeconds() > SLEEP_GAP_SECONDS) {
-            stopTracking(lastTick, "Stopped — system was asleep");
+            resumeAfterSleep(lastTick, now);
             return;
         }
         lastTick = now;
         updateTimerLabel();
+    }
+
+    /**
+     * Handles a detected system sleep while tracking: closes the pre-sleep entry
+     * at the last awake instant (so the slept time isn't billed) and immediately
+     * opens a fresh entry for the same project as of the wake instant, leaving the
+     * timer running. {@code runningSince} is shifted back by the time already
+     * worked this session so the on-screen timer keeps climbing across the gap
+     * rather than resetting to zero; the committed totals stay correct because the
+     * closed segment isn't folded into the base until the session is stopped.
+     *
+     * <p>Also raises a native OS notification: the widget may be off-screen, not
+     * on top, or on another virtual desktop when the machine wakes.
+     */
+    private void resumeAfterSleep(LocalDateTime sleptAt, LocalDateTime wokeAt) {
+        Project project = projectCombo.getValue();
+        if (project == null) {
+            // Nothing to resume onto — fall back to just stopping.
+            stopTracking(sleptAt, "Stopped — system was asleep");
+            tray.notify("Timer stopped", "The machine slept and no project was selected.");
+            return;
+        }
+        long workedSeconds =
+                Math.max(0, java.time.Duration.between(runningSince, sleptAt).getSeconds());
+        String slept = formatHms(java.time.Duration.between(sleptAt, wokeAt).getSeconds());
+
+        timeEntryDao.stop(runningEntryId, sleptAt);
+        runningEntryId = timeEntryDao.start(project.id(), wokeAt);
+        runningSince = wokeAt.minusSeconds(workedSeconds);
+        lastTick = wokeAt;
+
+        statusLabel.setText("Resumed after sleep (" + slept + " asleep) — " + project.name());
+        updateTimerLabel();
+        tray.notify("Timer resumed",
+                "Was asleep " + slept + ". Still tracking " + project.name() + ".");
     }
 
     /** Loads committed today/all-time totals for a project into the labels and the live base. */
@@ -592,6 +634,7 @@ public class App extends Application {
             // Don't lose an in-progress session on a hard close.
             timeEntryDao.stop(runningEntryId, LocalDateTime.now());
         }
+        tray.remove();
         if (database != null) {
             database.stop();
         }
