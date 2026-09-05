@@ -33,6 +33,11 @@ GraalVM / GluonFX.
   is minimised, not on top, or on another virtual desktop. If no project is
   selected, it just stops, as before. The tray notification is best-effort — where
   no system tray is available the on-screen status line still shows what happened.
+  - Detection is a wall-clock check on a dedicated 1s daemon thread: a jump far
+    larger than 1s between samples means the JVM was frozen by an OS suspend.
+    This only fires when the process was *actually* frozen — a "modern standby"
+    that keeps the JVM scheduled leaves nothing to trim and is a no-op. Each wake
+    is logged (`INFO`, wall vs. monotonic gap) so you can see what was detected.
 
 ## Run during development (normal JVM)
 

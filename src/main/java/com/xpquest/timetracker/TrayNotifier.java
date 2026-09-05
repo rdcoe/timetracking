@@ -20,6 +20,8 @@ import java.awt.image.BufferedImage;
  */
 final class TrayNotifier {
 
+    private static final System.Logger LOG = System.getLogger(TrayNotifier.class.getName());
+
     private TrayIcon trayIcon;
 
     /**
@@ -29,15 +31,19 @@ final class TrayNotifier {
     void install() {
         try {
             if (!SystemTray.isSupported()) {
+                LOG.log(System.Logger.Level.INFO,
+                        "System tray not supported; sleep/wake notifications disabled");
                 return;
             }
             TrayIcon icon = new TrayIcon(iconImage(), "XP Quest Time Tracker");
             icon.setImageAutoSize(true);
             SystemTray.getSystemTray().add(icon);
             this.trayIcon = icon;
+            LOG.log(System.Logger.Level.INFO, "System tray notifier installed");
         } catch (AWTException | RuntimeException | LinkageError e) {
             // No usable tray — notify() will be a no-op from here on.
             this.trayIcon = null;
+            LOG.log(System.Logger.Level.WARNING, "Tray notifier unavailable: " + e);
         }
     }
 
@@ -51,7 +57,7 @@ final class TrayNotifier {
             EventQueue.invokeLater(
                     () -> icon.displayMessage(caption, text, TrayIcon.MessageType.INFO));
         } catch (RuntimeException | LinkageError e) {
-            // Ignore — the status line already shows the same text.
+            LOG.log(System.Logger.Level.WARNING, "Tray notification failed: " + e);
         }
     }
 

@@ -40,18 +40,24 @@ Single-process desktop app. Flow: `Launcher` → `App` (JavaFX `Application`) �
   (`runningEntryId`/`runningSince` + a 1s `Timeline`). It creates and `start()`s
   the `Database` in `Application.start` and `stop()`s it in `Application.stop`,
   so the DB engine lifecycle is tied to the window.
-  - **Sleep/wake.** The 1s tick compares wall-clock against the previous tick; a
-    gap over `SLEEP_GAP_SECONDS` means the JVM was frozen by a suspend.
-    `resumeAfterSleep` then closes the current `time_entry` at the last awake
-    instant, opens a new one for the same project at the wake instant, and shifts
-    `runningSince` back by the seconds already worked so the label keeps climbing.
-    The base totals are deliberately *not* refreshed mid-session, so `base +
-    elapsed` stays correct until `stopTracking` re-queries. No project selected →
-    it falls back to a plain stop.
+  - **Sleep/wake.** A dedicated 1s daemon (`sleepWatch`, started/stopped with the
+    tracking session) samples `System.currentTimeMillis()`; a gap over
+    `SLEEP_GAP_SECONDS` means the JVM was frozen by a suspend. It is *not* on the
+    JavaFX ticker — that's an unreliable clock across a suspend and while
+    minimised (misses real freezes, and would cry sleep over a long minimise).
+    `checkForSleep` (watch thread) logs the wall vs. monotonic gap and posts
+    `onWakeFromSleep` to the FX thread, which calls `resumeAfterSleep`: close the
+    current `time_entry` at the sleep instant, open a new one for the same project
+    at the wake instant, shift `runningSince` back by the seconds already worked
+    so the label keeps climbing. Base totals are deliberately *not* refreshed
+    mid-session, so `base + elapsed` stays correct until `stopTracking`
+    re-queries. No project selected → falls back to a plain stop. A wall/monotonic
+    gap that move together (no real freeze, e.g. Windows modern standby) is a
+    no-op — nothing was mis-tracked.
 - **`TrayNotifier`** is the only `java.awt` user (system-tray `TrayIcon`
   notifications for the sleep/wake event, seen even when the widget isn't
   visible). Every method is wrapped so a missing tray or unavailable AWT
-  (`LinkageError`) is a silent no-op — the status line carries the same text. The
+  (`LinkageError`) is a no-op (logged) — the status line carries the same text. The
   tray icon is drawn pixel-by-pixel (no `Graphics2D`, no image resource) to keep
   the native-image surface minimal. **Not yet exercised in a native build**: if
   `gluonfx:build` chokes on AWT, re-run `mvn gluonfx:runagent` to regenerate

@@ -9,6 +9,7 @@ import javafx.animation.Animation;
 import javafx.animation.KeyFrame;
 import javafx.animation.Timeline;
 import javafx.application.Application;
+import javafx.application.Platform;
 import javafx.geometry.Insets;
 import javafx.geometry.Pos;
 import javafx.scene.Node;
@@ -42,6 +43,9 @@ import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeParseException;
 import java.util.List;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.TimeUnit;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -73,17 +77,26 @@ public class App extends Application {
 
     private Long runningEntryId;
     private LocalDateTime runningSince;
-    // Wall-clock time of the previous tick. The gap between ticks is normally
-    // ~1s; a much larger gap means the JVM was frozen by a system suspend, so we
-    // stop tracking as of this instant (the last moment we know we were awake).
-    private LocalDateTime lastTick;
+
+    // Independent 1s daemon that watches the wall clock for a large forward jump —
+    // the tell-tale of the JVM having been frozen by an OS suspend. It runs on its
+    // own thread rather than the JavaFX ticker, so it keeps sampling while the
+    // window is minimised and isn't subject to animation-pulse throttling: it
+    // neither misses a real suspend nor mistakes a long minimise for one.
+    private ScheduledExecutorService sleepWatch;
+    private long sleepWatchWallMs;
+    private long sleepWatchNanos;
+
     // Completed totals for the selected project, captured so the live session
     // can be added on top each tick without re-querying every second.
     private long baseTodaySeconds;
     private long baseTotalSeconds;
 
-    // A tick gap beyond this is treated as a system sleep rather than a hiccup.
+    // A wall-clock jump beyond this between two 1s watch samples is treated as a
+    // system sleep rather than a scheduling hiccup.
     private static final long SLEEP_GAP_SECONDS = 30;
+
+    private static final System.Logger LOG = System.getLogger(App.class.getName());
 
     @Override
     public void start(Stage stage) {
@@ -238,13 +251,13 @@ public class App extends Application {
                 return;
             }
             runningSince = LocalDateTime.now();
-            lastTick = runningSince;
             runningEntryId = timeEntryDao.start(project.id(), runningSince);
             refreshTotals(project); // capture the committed base before this session
             projectCombo.setDisable(true);
             manualAddRow.setDisable(true);
             toggleButton.setText("Stop");
             statusLabel.setText("Tracking — " + project.name());
+            startSleepWatch();
             ticker.play();
             updateTimerLabel();
         } else {
@@ -260,9 +273,9 @@ public class App extends Application {
         Project project = projectCombo.getValue();
         timeEntryDao.stop(runningEntryId, endTime);
         ticker.stop();
+        stopSleepWatch();
         runningEntryId = null;
         runningSince = null;
-        lastTick = null;
         projectCombo.setDisable(false);
         manualAddRow.setDisable(false);
         toggleButton.setText("Start");
@@ -487,24 +500,73 @@ public class App extends Application {
     }
 
     /**
-     * Per-second tick. Detects a system sleep (a tick gap far larger than the
-     * expected ~1s, because the JVM was frozen while suspended) and, if found,
-     * hands off to {@link #resumeAfterSleep} — which closes the entry as of the
-     * last awake instant (so the slept time isn't billed) and reopens a fresh one
-     * for the same project, leaving the timer running.
+     * Per-second UI tick: just repaints the running timer. Sleep detection lives
+     * in the independent {@link #sleepWatch} daemon, not here — the JavaFX ticker
+     * is an unreliable clock across a suspend and while the window is minimised.
      */
     private void onTick() {
-        if (runningSince == null) {
-            return;
-        }
-        LocalDateTime now = LocalDateTime.now();
-        if (lastTick != null
-                && java.time.Duration.between(lastTick, now).getSeconds() > SLEEP_GAP_SECONDS) {
-            resumeAfterSleep(lastTick, now);
-            return;
-        }
-        lastTick = now;
         updateTimerLabel();
+    }
+
+    /** Starts the wall-clock sleep watchdog for the life of a tracking session. */
+    private void startSleepWatch() {
+        if (sleepWatch != null) {
+            return;
+        }
+        sleepWatchWallMs = System.currentTimeMillis();
+        sleepWatchNanos = System.nanoTime();
+        sleepWatch = Executors.newSingleThreadScheduledExecutor(r -> {
+            Thread t = new Thread(r, "xpquest-sleep-watch");
+            t.setDaemon(true);
+            return t;
+        });
+        // Fixed delay (not fixed rate): after a freeze it runs once, late, then
+        // resumes its 1s cadence — no burst of catch-up calls to dedupe.
+        sleepWatch.scheduleWithFixedDelay(this::checkForSleep, 1, 1, TimeUnit.SECONDS);
+        LOG.log(System.Logger.Level.INFO, "Sleep watch started");
+    }
+
+    /** Stops the watchdog. Safe to call when it isn't running. */
+    private void stopSleepWatch() {
+        if (sleepWatch != null) {
+            sleepWatch.shutdownNow();
+            sleepWatch = null;
+            LOG.log(System.Logger.Level.INFO, "Sleep watch stopped");
+        }
+    }
+
+    /**
+     * Runs on the watch thread once a second. A wall-clock gap far larger than the
+     * ~1s delay means the JVM was frozen by an OS suspend; hand the wake off to the
+     * FX thread. The monotonic-clock gap is logged alongside for diagnosis — on a
+     * true suspend it typically lags wall-clock (the process wasn't running), while
+     * the two moving together points at a "modern standby" that never froze us.
+     */
+    private void checkForSleep() {
+        long wallNow = System.currentTimeMillis();
+        long nanoNow = System.nanoTime();
+        long wallGapMs = wallNow - sleepWatchWallMs;
+        long monoGapMs = (nanoNow - sleepWatchNanos) / 1_000_000L;
+        sleepWatchWallMs = wallNow;
+        sleepWatchNanos = nanoNow;
+
+        if (wallGapMs <= SLEEP_GAP_SECONDS * 1000L) {
+            return;
+        }
+        LocalDateTime wokeAt = LocalDateTime.now();
+        LocalDateTime sleptAt = wokeAt.minus(java.time.Duration.ofMillis(wallGapMs));
+        LOG.log(System.Logger.Level.INFO,
+                "Wake detected: wall gap " + wallGapMs + "ms, monotonic gap " + monoGapMs
+                        + "ms; treating " + sleptAt + " → " + wokeAt + " as slept");
+        Platform.runLater(() -> onWakeFromSleep(sleptAt, wokeAt));
+    }
+
+    /** FX-thread half of wake handling: resume the running session, if any. */
+    private void onWakeFromSleep(LocalDateTime sleptAt, LocalDateTime wokeAt) {
+        if (runningSince == null || !sleptAt.isAfter(runningSince)) {
+            return; // nothing tracking, or the "sleep" predates this session
+        }
+        resumeAfterSleep(sleptAt, wokeAt);
     }
 
     /**
@@ -534,12 +596,14 @@ public class App extends Application {
         timeEntryDao.stop(runningEntryId, sleptAt);
         runningEntryId = timeEntryDao.start(project.id(), wokeAt);
         runningSince = wokeAt.minusSeconds(workedSeconds);
-        lastTick = wokeAt;
 
         statusLabel.setText("Resumed after sleep (" + slept + " asleep) — " + project.name());
         updateTimerLabel();
         tray.notify("Timer resumed",
                 "Was asleep " + slept + ". Still tracking " + project.name() + ".");
+        LOG.log(System.Logger.Level.INFO,
+                "Resumed after sleep: closed entry at " + sleptAt + ", opened entry "
+                        + runningEntryId + " at " + wokeAt);
     }
 
     /** Loads committed today/all-time totals for a project into the labels and the live base. */
@@ -630,6 +694,7 @@ public class App extends Application {
 
     @Override
     public void stop() {
+        stopSleepWatch();
         if (runningEntryId != null) {
             // Don't lose an in-progress session on a hard close.
             timeEntryDao.stop(runningEntryId, LocalDateTime.now());
