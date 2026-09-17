@@ -780,7 +780,7 @@ public class App extends Application {
         alert.setHeaderText("How Daily Summary export works");
         applyAppTheme(alert.getDialogPane());
         alert.setResizable(true);
-        alert.setContentText("""
+        Label content = new Label("""
                 Pressing "Daily Summary" writes one daily-summary-<DATE>.json file per day, \
                 for every day from the last checkpoint through today that has completed \
                 (stopped) tracked time. Days with no completed time get no file. Today's \
@@ -797,7 +797,14 @@ public class App extends Application {
                 client — read live from the project record at export time. Editing a \
                 project's metadata (the … button) doesn't change files already written, \
                 but is reflected in every summary generated afterward.""");
-        alert.getDialogPane().setPrefSize(420, 320);
+        content.setWrapText(true);
+        content.setPrefWidth(420);
+        // A wrapped Label as the dialog's content (rather than setContentText,
+        // whose internal Label has repeatedly mis-measured its own height for
+        // long text) computes its preferred height from the wrap width, so the
+        // DialogPane sizes itself to fit every line without needing a scroll
+        // bar or a manual resize.
+        alert.getDialogPane().setContent(content);
         alert.showAndWait();
     }
 
