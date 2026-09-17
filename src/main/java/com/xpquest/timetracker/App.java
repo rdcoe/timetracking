@@ -10,10 +10,12 @@ import javafx.animation.KeyFrame;
 import javafx.animation.Timeline;
 import javafx.application.Application;
 import javafx.application.Platform;
+import javafx.geometry.HPos;
 import javafx.geometry.Insets;
 import javafx.geometry.Pos;
 import javafx.scene.Node;
 import javafx.scene.Scene;
+import javafx.scene.control.Alert;
 import javafx.scene.control.Button;
 import javafx.scene.control.ButtonBar;
 import javafx.scene.control.ButtonType;
@@ -21,6 +23,7 @@ import javafx.scene.control.CheckBox;
 import javafx.scene.control.ComboBox;
 import javafx.scene.control.DatePicker;
 import javafx.scene.control.Dialog;
+import javafx.scene.control.DialogPane;
 import javafx.scene.control.Label;
 import javafx.scene.control.TextArea;
 import javafx.scene.control.TextField;
@@ -137,11 +140,18 @@ public class App extends Application {
             }
         });
 
-        Button manageButton = new Button("＋");
-        manageButton.setTooltip(new Tooltip("Register a project"));
-        manageButton.setOnAction(e -> showProjectDialog(stage));
+        Button addProjectButton = new Button("+");
+        addProjectButton.getStyleClass().add("icon-button");
+        addProjectButton.setTooltip(new Tooltip("Register a new project"));
+        addProjectButton.setOnAction(e -> showAddProjectDialog(stage));
 
-        HBox projectRow = new HBox(6, projectCombo, manageButton);
+        Button editProjectButton = new Button("…");
+        editProjectButton.getStyleClass().add("icon-button");
+        editProjectButton.setTooltip(new Tooltip("Edit the selected project"));
+        editProjectButton.setOnAction(e -> showEditProjectDialog(stage, projectCombo.getValue()));
+        editProjectButton.disableProperty().bind(projectCombo.valueProperty().isNull());
+
+        HBox projectRow = new HBox(6, projectCombo, addProjectButton, editProjectButton);
         HBox.setHgrow(projectCombo, Priority.ALWAYS);
 
         timerLabel = new Label("00:00:00");
@@ -189,7 +199,13 @@ public class App extends Application {
         summaryButton.setTooltip(new Tooltip(
                 "Write per-day time summaries from the last checkpoint through today"));
         summaryButton.setOnAction(e -> writeDailySummary());
-        HBox summaryRow = new HBox(summaryButton);
+
+        Button summaryHelpButton = new Button("?");
+        summaryHelpButton.getStyleClass().add("icon-button");
+        summaryHelpButton.setTooltip(new Tooltip("How export & categorization work"));
+        summaryHelpButton.setOnAction(e -> showSummaryHelp(stage));
+
+        HBox summaryRow = new HBox(6, summaryButton, summaryHelpButton);
         summaryRow.setAlignment(Pos.CENTER);
 
         statusLabel = new Label("Ready");
@@ -642,14 +658,26 @@ public class App extends Application {
         return box;
     }
 
-    private void showProjectDialog(Stage owner) {
-        Dialog<Project> dialog = new Dialog<>();
-        dialog.initOwner(owner);
-        dialog.setTitle("Register Project");
+    /** The four fields shared by the add and edit project dialogs. */
+    private record ProjectFormFields(TextField code, TextField name, TextField client, TextArea description) {
+    }
 
-        ButtonType saveType = new ButtonType("Save", ButtonBar.ButtonData.OK_DONE);
-        dialog.getDialogPane().getButtonTypes().addAll(saveType, ButtonType.CANCEL);
+    /**
+     * Dialogs (Add/Edit Project, the export help Alert) open in their own window with
+     * its own Scene, so the main Scene's stylesheet (applied in {@link #buildScene})
+     * never reaches them — without this they fall back to a default light theme that
+     * clashes with the app's dark one.
+     */
+    private void applyAppTheme(DialogPane pane) {
+        pane.getStylesheets().add(App.class.getResource("/styles.css").toExternalForm());
+    }
 
+    // Matches schema.sql's `description VARCHAR(2000)` — the field can never hold more
+    // than the column can store.
+    private static final int DESCRIPTION_MAX_LENGTH = 2000;
+
+    /** Builds the code/name/client/description grid shared by both project dialogs. */
+    private ProjectFormFields buildProjectFormGrid(GridPane grid) {
         TextField code = new TextField();
         code.setPromptText("e.g. ACME-2026");
         TextField name = new TextField();
@@ -657,8 +685,22 @@ public class App extends Application {
         TextField client = new TextField();
         TextArea description = new TextArea();
         description.setPrefRowCount(3);
+        description.setWrapText(true);
 
-        GridPane grid = new GridPane();
+        Label descriptionCount = new Label("0/" + DESCRIPTION_MAX_LENGTH);
+        // A TextFormatter on a TextArea is unreliable here — it doesn't consistently
+        // stop typing at the limit and breaks Paste entirely. A plain listener that
+        // truncates after the fact works for every input path (typing, paste, drag)
+        // and doubles as the counter update.
+        description.textProperty().addListener((obs, was, now) -> {
+            if (now.length() > DESCRIPTION_MAX_LENGTH) {
+                description.setText(now.substring(0, DESCRIPTION_MAX_LENGTH));
+                description.positionCaret(DESCRIPTION_MAX_LENGTH);
+                return; // setText above re-fires this listener with the truncated value
+            }
+            descriptionCount.setText(now.length() + "/" + DESCRIPTION_MAX_LENGTH);
+        });
+
         grid.setHgap(8);
         grid.setVgap(8);
         grid.setPadding(new Insets(10));
@@ -666,19 +708,36 @@ public class App extends Application {
         grid.addRow(1, new Label("Name"), name);
         grid.addRow(2, new Label("Client"), client);
         grid.addRow(3, new Label("Description"), description);
+        grid.add(descriptionCount, 1, 4);
+        GridPane.setHalignment(descriptionCount, HPos.RIGHT);
+
+        return new ProjectFormFields(code, name, client, description);
+    }
+
+    private void showAddProjectDialog(Stage owner) {
+        Dialog<Project> dialog = new Dialog<>();
+        dialog.initOwner(owner);
+        dialog.setTitle("Register Project");
+        applyAppTheme(dialog.getDialogPane());
+
+        ButtonType saveType = new ButtonType("Save", ButtonBar.ButtonData.OK_DONE);
+        dialog.getDialogPane().getButtonTypes().addAll(saveType, ButtonType.CANCEL);
+
+        GridPane grid = new GridPane();
+        ProjectFormFields fields = buildProjectFormGrid(grid);
         dialog.getDialogPane().setContent(grid);
 
         Node saveButton = dialog.getDialogPane().lookupButton(saveType);
         saveButton.setDisable(true);
-        name.textProperty().addListener((o, was, now) -> saveButton.setDisable(now.trim().isEmpty()));
+        fields.name().textProperty().addListener((o, was, now) -> saveButton.setDisable(now.trim().isEmpty()));
 
         dialog.setResultConverter(button -> {
             if (button == saveType) {
                 return new Project(null,
-                        code.getText().trim(),
-                        name.getText().trim(),
-                        description.getText().trim(),
-                        client.getText().trim(),
+                        fields.code().getText().trim(),
+                        fields.name().getText().trim(),
+                        fields.description().getText().trim(),
+                        fields.client().getText().trim(),
                         true);
             }
             return null;
@@ -690,6 +749,85 @@ public class App extends Application {
             projectCombo.setValue(saved);
             statusLabel.setText("Registered " + saved.name());
         });
+    }
+
+    /** Edits {@code existing}'s code/name/client/description in place. No-op if none is selected. */
+    private void showEditProjectDialog(Stage owner, Project existing) {
+        if (existing == null) {
+            return;
+        }
+        Dialog<Project> dialog = new Dialog<>();
+        dialog.initOwner(owner);
+        dialog.setTitle("Edit Project");
+        applyAppTheme(dialog.getDialogPane());
+
+        ButtonType saveType = new ButtonType("Save", ButtonBar.ButtonData.OK_DONE);
+        dialog.getDialogPane().getButtonTypes().addAll(saveType, ButtonType.CANCEL);
+
+        GridPane grid = new GridPane();
+        ProjectFormFields fields = buildProjectFormGrid(grid);
+        fields.code().setText(existing.code());
+        fields.name().setText(existing.name());
+        fields.client().setText(existing.client());
+        fields.description().setText(existing.description());
+        dialog.getDialogPane().setContent(grid);
+
+        Node saveButton = dialog.getDialogPane().lookupButton(saveType);
+        fields.name().textProperty().addListener((o, was, now) -> saveButton.setDisable(now.trim().isEmpty()));
+
+        dialog.setResultConverter(button -> {
+            if (button == saveType) {
+                return new Project(existing.id(),
+                        fields.code().getText().trim(),
+                        fields.name().getText().trim(),
+                        fields.description().getText().trim(),
+                        fields.client().getText().trim(),
+                        existing.active());
+            }
+            return null;
+        });
+
+        dialog.showAndWait().ifPresent(p -> {
+            projectDao.update(p);
+            refreshProjects();
+            statusLabel.setText("Updated " + p.name());
+        });
+    }
+
+    /** Explains, in plain terms, how Daily Summary export and workstream categorization work. */
+    private void showSummaryHelp(Stage owner) {
+        Alert alert = new Alert(Alert.AlertType.INFORMATION);
+        alert.initOwner(owner);
+        alert.setTitle("Export & categorization");
+        alert.setHeaderText("How Daily Summary export works");
+        applyAppTheme(alert.getDialogPane());
+        alert.setResizable(true);
+        Label content = new Label("""
+                Pressing "Daily Summary" writes one daily-summary-<DATE>.json file per day, \
+                for every day from the last checkpoint through today that has completed \
+                (stopped) tracked time. Days with no completed time get no file. Today's \
+                file is rewritten on every press, since today's tracking may still be in \
+                progress. The checkpoint then advances to today.
+
+                Each project's time is categorized into a workstream purely from its code \
+                prefix, computed fresh at export time:
+                  • xpq-sred* → sred
+                  • any other xpq* (e.g. xpq-eng, xpq-techops) → engineering
+                  • anything else → client
+
+                Each entry also carries the project's current name, description, and \
+                client — read live from the project record at export time. Editing a \
+                project's metadata (the … button) doesn't change files already written, \
+                but is reflected in every summary generated afterward.""");
+        content.setWrapText(true);
+        content.setPrefWidth(420);
+        // A wrapped Label as the dialog's content (rather than setContentText,
+        // whose internal Label has repeatedly mis-measured its own height for
+        // long text) computes its preferred height from the wrap width, so the
+        // DialogPane sizes itself to fit every line without needing a scroll
+        // bar or a manual resize.
+        alert.getDialogPane().setContent(content);
+        alert.showAndWait();
     }
 
     @Override
