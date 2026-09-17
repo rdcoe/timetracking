@@ -26,6 +26,7 @@ import javafx.scene.control.DialogPane;
 import javafx.scene.control.Label;
 import javafx.scene.control.TextArea;
 import javafx.scene.control.TextField;
+import javafx.scene.control.TextFormatter;
 import javafx.scene.control.Tooltip;
 import javafx.scene.layout.GridPane;
 import javafx.scene.layout.HBox;
@@ -48,6 +49,7 @@ import java.util.List;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
+import java.util.function.UnaryOperator;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -680,6 +682,12 @@ public class App extends Application {
         TextField client = new TextField();
         TextArea description = new TextArea();
         description.setPrefRowCount(3);
+        description.setWrapText(true);
+        // Matches schema.sql's `description VARCHAR(2000)` — reject keystrokes/pastes
+        // that would exceed what the column can actually store.
+        UnaryOperator<TextFormatter.Change> capLength = change ->
+                change.getControlNewText().length() <= 2000 ? change : null;
+        description.setTextFormatter(new TextFormatter<>(capLength));
 
         grid.setHgap(8);
         grid.setVgap(8);
