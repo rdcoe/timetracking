@@ -25,6 +25,40 @@
     -fx-background-color: #74c7ec;
 }
 
+/* Small square buttons next to the project combo and Daily Summary — a bare
+   "+"/"…"/"?" glyph at the default control font size is too small to read
+   at a glance, so give them their own larger, fixed-size rendering. */
+.icon-button {
+    -fx-font-size: 14px;
+    -fx-font-weight: bold;
+    -fx-min-width: 30px;
+    -fx-min-height: 26px;
+    -fx-background-radius: 6;
+    -fx-background-color: #313244;
+    -fx-text-fill: #cdd6f4;
+}
+
+.icon-button:hover {
+    -fx-background-color: #45475a;
+}
+
+/* Dialogs (Alert/Dialog) open in their own window, outside the main Scene's
+   stylesheet, so they must opt in explicitly (see showAddProjectDialog /
+   showEditProjectDialog / showSummaryHelp) to match the app's dark theme
+   instead of falling back to a mismatched default. */
+.dialog-pane {
+    -fx-background-color: #1e1e2e;
+}
+
+.dialog-pane .header-panel {
+    -fx-background-color: #313244;
+}
+
+.dialog-pane .content.label,
+.dialog-pane .header-panel .label {
+    -fx-text-fill: #cdd6f4;
+}
+
 .status {
     -fx-font-size: 11px;
     -fx-text-fill: #9399b2;

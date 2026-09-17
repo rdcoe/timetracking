@@ -22,6 +22,7 @@ import javafx.scene.control.CheckBox;
 import javafx.scene.control.ComboBox;
 import javafx.scene.control.DatePicker;
 import javafx.scene.control.Dialog;
+import javafx.scene.control.DialogPane;
 import javafx.scene.control.Label;
 import javafx.scene.control.TextArea;
 import javafx.scene.control.TextField;
@@ -139,10 +140,12 @@ public class App extends Application {
         });
 
         Button addProjectButton = new Button("+");
+        addProjectButton.getStyleClass().add("icon-button");
         addProjectButton.setTooltip(new Tooltip("Register a new project"));
         addProjectButton.setOnAction(e -> showAddProjectDialog(stage));
 
         Button editProjectButton = new Button("…");
+        editProjectButton.getStyleClass().add("icon-button");
         editProjectButton.setTooltip(new Tooltip("Edit the selected project"));
         editProjectButton.setOnAction(e -> showEditProjectDialog(stage, projectCombo.getValue()));
         editProjectButton.disableProperty().bind(projectCombo.valueProperty().isNull());
@@ -197,6 +200,7 @@ public class App extends Application {
         summaryButton.setOnAction(e -> writeDailySummary());
 
         Button summaryHelpButton = new Button("?");
+        summaryHelpButton.getStyleClass().add("icon-button");
         summaryHelpButton.setTooltip(new Tooltip("How export & categorization work"));
         summaryHelpButton.setOnAction(e -> showSummaryHelp(stage));
 
@@ -657,6 +661,16 @@ public class App extends Application {
     private record ProjectFormFields(TextField code, TextField name, TextField client, TextArea description) {
     }
 
+    /**
+     * Dialogs (Add/Edit Project, the export help Alert) open in their own window with
+     * its own Scene, so the main Scene's stylesheet (applied in {@link #buildScene})
+     * never reaches them — without this they fall back to a default light theme that
+     * clashes with the app's dark one.
+     */
+    private void applyAppTheme(DialogPane pane) {
+        pane.getStylesheets().add(App.class.getResource("/styles.css").toExternalForm());
+    }
+
     /** Builds the code/name/client/description grid shared by both project dialogs. */
     private ProjectFormFields buildProjectFormGrid(GridPane grid) {
         TextField code = new TextField();
@@ -682,6 +696,7 @@ public class App extends Application {
         Dialog<Project> dialog = new Dialog<>();
         dialog.initOwner(owner);
         dialog.setTitle("Register Project");
+        applyAppTheme(dialog.getDialogPane());
 
         ButtonType saveType = new ButtonType("Save", ButtonBar.ButtonData.OK_DONE);
         dialog.getDialogPane().getButtonTypes().addAll(saveType, ButtonType.CANCEL);
@@ -722,6 +737,7 @@ public class App extends Application {
         Dialog<Project> dialog = new Dialog<>();
         dialog.initOwner(owner);
         dialog.setTitle("Edit Project");
+        applyAppTheme(dialog.getDialogPane());
 
         ButtonType saveType = new ButtonType("Save", ButtonBar.ButtonData.OK_DONE);
         dialog.getDialogPane().getButtonTypes().addAll(saveType, ButtonType.CANCEL);
@@ -762,6 +778,8 @@ public class App extends Application {
         alert.initOwner(owner);
         alert.setTitle("Export & categorization");
         alert.setHeaderText("How Daily Summary export works");
+        applyAppTheme(alert.getDialogPane());
+        alert.setResizable(true);
         alert.setContentText("""
                 Pressing "Daily Summary" writes one daily-summary-<DATE>.json file per day, \
                 for every day from the last checkpoint through today that has completed \
@@ -779,7 +797,7 @@ public class App extends Application {
                 client — read live from the project record at export time. Editing a \
                 project's metadata (the … button) doesn't change files already written, \
                 but is reflected in every summary generated afterward.""");
-        alert.getDialogPane().setPrefWidth(420);
+        alert.getDialogPane().setPrefSize(420, 320);
         alert.showAndWait();
     }
 
