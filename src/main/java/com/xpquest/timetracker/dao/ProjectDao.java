@@ -58,6 +58,22 @@ public final class ProjectDao {
         }
     }
 
+    /** Updates an existing project's editable fields in place, keyed by id. */
+    public void update(Project p) {
+        String sql = "UPDATE project SET code = ?, name = ?, description = ?, client_name = ? WHERE id = ?";
+        try (Connection c = db.connection();
+             PreparedStatement ps = c.prepareStatement(sql)) {
+            ps.setString(1, p.code());
+            ps.setString(2, p.name());
+            ps.setString(3, p.description());
+            ps.setString(4, p.client());
+            ps.setLong(5, p.id());
+            ps.executeUpdate();
+        } catch (SQLException e) {
+            throw new IllegalStateException("Failed to update project " + p.id(), e);
+        }
+    }
+
     private Project map(ResultSet rs) throws SQLException {
         return new Project(
                 rs.getLong("id"),
