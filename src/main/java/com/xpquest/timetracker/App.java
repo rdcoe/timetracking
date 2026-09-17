@@ -10,6 +10,7 @@ import javafx.animation.KeyFrame;
 import javafx.animation.Timeline;
 import javafx.application.Application;
 import javafx.application.Platform;
+import javafx.geometry.HPos;
 import javafx.geometry.Insets;
 import javafx.geometry.Pos;
 import javafx.scene.Node;
@@ -26,7 +27,6 @@ import javafx.scene.control.DialogPane;
 import javafx.scene.control.Label;
 import javafx.scene.control.TextArea;
 import javafx.scene.control.TextField;
-import javafx.scene.control.TextFormatter;
 import javafx.scene.control.Tooltip;
 import javafx.scene.layout.GridPane;
 import javafx.scene.layout.HBox;
@@ -49,7 +49,6 @@ import java.util.List;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
-import java.util.function.UnaryOperator;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -673,6 +672,10 @@ public class App extends Application {
         pane.getStylesheets().add(App.class.getResource("/styles.css").toExternalForm());
     }
 
+    // Matches schema.sql's `description VARCHAR(2000)` — the field can never hold more
+    // than the column can store.
+    private static final int DESCRIPTION_MAX_LENGTH = 2000;
+
     /** Builds the code/name/client/description grid shared by both project dialogs. */
     private ProjectFormFields buildProjectFormGrid(GridPane grid) {
         TextField code = new TextField();
@@ -683,11 +686,20 @@ public class App extends Application {
         TextArea description = new TextArea();
         description.setPrefRowCount(3);
         description.setWrapText(true);
-        // Matches schema.sql's `description VARCHAR(2000)` — reject keystrokes/pastes
-        // that would exceed what the column can actually store.
-        UnaryOperator<TextFormatter.Change> capLength = change ->
-                change.getControlNewText().length() <= 2000 ? change : null;
-        description.setTextFormatter(new TextFormatter<>(capLength));
+
+        Label descriptionCount = new Label("0/" + DESCRIPTION_MAX_LENGTH);
+        // A TextFormatter on a TextArea is unreliable here — it doesn't consistently
+        // stop typing at the limit and breaks Paste entirely. A plain listener that
+        // truncates after the fact works for every input path (typing, paste, drag)
+        // and doubles as the counter update.
+        description.textProperty().addListener((obs, was, now) -> {
+            if (now.length() > DESCRIPTION_MAX_LENGTH) {
+                description.setText(now.substring(0, DESCRIPTION_MAX_LENGTH));
+                description.positionCaret(DESCRIPTION_MAX_LENGTH);
+                return; // setText above re-fires this listener with the truncated value
+            }
+            descriptionCount.setText(now.length() + "/" + DESCRIPTION_MAX_LENGTH);
+        });
 
         grid.setHgap(8);
         grid.setVgap(8);
@@ -696,6 +708,8 @@ public class App extends Application {
         grid.addRow(1, new Label("Name"), name);
         grid.addRow(2, new Label("Client"), client);
         grid.addRow(3, new Label("Description"), description);
+        grid.add(descriptionCount, 1, 4);
+        GridPane.setHalignment(descriptionCount, HPos.RIGHT);
 
         return new ProjectFormFields(code, name, client, description);
     }

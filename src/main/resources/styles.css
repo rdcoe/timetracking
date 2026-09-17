@@ -59,6 +59,15 @@
     -fx-text-fill: #cdd6f4;
 }
 
+/* A right-click context menu on any text field inherits our stylesheet (it's a
+   popup owned by the control it's spawned from) but keeps the default light
+   background, so the global light `.label` text-fill above was rendering
+   nearly invisible on white. Give it the same dark background as everything
+   else so that text-fill stays legible instead of overriding it per item. */
+.context-menu {
+    -fx-background-color: #313244;
+}
+
 .status {
     -fx-font-size: 11px;
     -fx-text-fill: #9399b2;
